@@ -1,0 +1,39 @@
+server:
+  port: 8080
+spring:
+  datasource:
+    username: engine_user
+    password: access
+    url: jdbc:mysql://localhost:3306/search_engine?useSSL=false&requireSSL=false&allowPublicKeyRetrieval=true
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+#  jpa:
+#    properties:
+#      hibernate:
+#        dialect: org.hibernate.dialect.MySQL8Dialect
+#    show-sql: true
+#    hibernate.ddl-auto: none
+#  liquibase:
+#    change-log: classpath:db/changelog/db.changelog-master.xml
+#    enabled: true
+#    drop-first: false
+
+# example values
+
+indexing-settings:
+  sites:
+#    - url: https://splitstone.ru
+#      name: Сплитстон
+    - url: https://candymapperr2.com
+      name: Кэндимаппер
+#    - url: https://www.lenta.ru
+#      name: Лента.ру
+#    - url: https://www.skillbox.ru
+#      name: Skillbox
+#    - url: https://www.playback.ru
+#      name: PlayBack.Ru
