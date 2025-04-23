@@ -2,6 +2,8 @@ package searchengine.model;
 
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import javax.persistence.*;
@@ -36,10 +38,12 @@ public class SiteEntity {
     @Column (name = "name", columnDefinition = "VARCHAR(255)", nullable = false)
     private String name;
 
-    @OneToMany (mappedBy = "siteId", cascade = CascadeType.ALL, fetch=FetchType.LAZY)
+    @OneToMany (mappedBy = "siteId", cascade = CascadeType.ALL)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private List<PageEntity> pageEntityList;
 
-//    @OneToMany (mappedBy = "siteEntity", fetch=FetchType.LAZY)
-//    private List<LemmaEntity> lemmaEntityList;
+    @OneToMany (mappedBy = "siteId", cascade = CascadeType.ALL)
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private List<LemmaEntity> lemmaEntityList;
 
 }

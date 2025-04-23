@@ -2,6 +2,8 @@ package searchengine.model;
 
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import javax.persistence.*;
 import java.util.List;
@@ -17,7 +19,7 @@ public class PageEntity {
     @Column (name = "Id", columnDefinition = "INT", nullable = false)
     private int id;
 
-    @ManyToOne
+    @ManyToOne (fetch=FetchType.LAZY)
     @JoinColumn (name = "site_id", columnDefinition = "INT", nullable = false)
     private SiteEntity siteId;
 
@@ -30,7 +32,8 @@ public class PageEntity {
     @Column (name = "content", columnDefinition = "MEDIUMTEXT", nullable = false)
     private String pageContentHttpCode;
 
-//    @OneToMany (mappedBy = "pageEntity", fetch=FetchType.LAZY)
-//    private List<IndexEntity> indexEntityList;
+    @OneToMany (mappedBy = "pageEntity", cascade = CascadeType.ALL)
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private List<IndexEntity> indexEntityList;
 
 }

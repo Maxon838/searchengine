@@ -1,54 +1,100 @@
 package searchengine.dto.indexing;
 
+import org.hibernate.PersistentObjectException;
 import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import searchengine.model.PageEntity;
-import searchengine.model.SiteEntity;
-import searchengine.model.Status;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
+import searchengine.lemma.LemmaFinder;
+import searchengine.model.*;
+import searchengine.repositories.IndexRepository;
+import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
 import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RecursiveAction;
 
+import static searchengine.services.IndexingServiceImpl.isRunning;
 import static searchengine.services.IndexingServiceImpl.stopFlag;
 
 public class PageIndexing extends RecursiveAction {
 
+    private final int id;
     private final String url;
     private final PageRepository pageRepository;
     private final SiteRepository siteRepository;
+    private final LemmaRepository lemmaRepository;
+    private final IndexRepository indexRepository;
     private final boolean isRootTask;
     private int responseCode = 0;
 
-    private static HashSet<String> allLinks = new HashSet<>();
+    private static Set<String> globalLinksStorage = ConcurrentHashMap.newKeySet();
+    private static ConcurrentHashMap<Integer, String> mainPages = new ConcurrentHashMap<>();
+    private static final Set<Integer> responseErrorsCodesSet = new HashSet<>(Arrays.asList(0,400,401,403,404,405,406,407,408,409,410,411,412,413,500,501,502,503,504,505,507,508,509));
 
-    public PageIndexing (String url, PageRepository pageRepository, SiteRepository siteRepository, boolean isRootTask)
+    public PageIndexing (int id, String url, PageRepository pageRepository, SiteRepository siteRepository, LemmaRepository lemmaRepository, IndexRepository indexRepository, boolean isRootTask)
     {
+        this.id = id;
         this.url = url;
         this.pageRepository = pageRepository;
         this.siteRepository = siteRepository;
+        this.lemmaRepository = lemmaRepository;
+        this.indexRepository = indexRepository;
         this.isRootTask = isRootTask;
     }
 
     @Override
     protected void compute() {
 
-        if (stopFlag.get()) return;
+        if (stopFlag.get())
+        {
+            for (SiteEntity site : siteRepository.findAll())
+            {
+                if (site.getStatus().equals(Status.INDEXING))
+                {
+                    site.setStatus(Status.FAILED);
+                    site.setLastError("Индексация прервана пользователем");
+                    siteRepository.save(site);
+                }
+            }
+
+            Thread.currentThread().interrupt();
+            mainPages.clear();
+            globalLinksStorage.clear();
+            isRunning.set(false);
+        }
+
+        if (isRootTask)
+        {
+            mainPages.put(siteRepository.findByMainPageURL(this.url).get().getId(), this.url);
+        }
 
         Document htmlContent = getHTMLContent(url);
 
         PageEntity page = new PageEntity();
         if (!isRootTask) {
-            page.setPagePath(url);
+            page.setPagePath(url.replace(mainPages.get(this.id), ""));
             page.setPageContentHttpCode(htmlContent.html());
             page.setPageResponseHttpCode(responseCode);
-            page.setSiteId(siteRepository.getById(1));
+            page.setSiteId(siteRepository.findById(this.id).get());
             pageRepository.save(page);
+
+            if (!responseErrorsCodesSet.contains(responseCode)) {
+                try {
+                    saveLemmasToTable(htmlContent, url.replace(mainPages.get(this.id), ""));
+                } catch (SQLException e) {
+                    System.out.println(e.getMessage());
+                }
+            }
         }
 
         List <PageIndexing> subTasksList = createSubtasks(getLinksFromPage(htmlContent));
@@ -64,10 +110,24 @@ public class PageIndexing extends RecursiveAction {
         if (isRootTask) {
 
             SiteEntity site = siteRepository.findByMainPageURL(url).get();
+            if (site.getStatus().equals(Status.FAILED)) return;
             site.setStatus(Status.INDEXED);
             siteRepository.save(site);
 
+            List <SiteEntity> sitesList = siteRepository.findAll();
+            int j = 0;
+            for (SiteEntity siteEntity : sitesList)
+            {
+                if (!siteEntity.getStatus().equals(Status.INDEXING)) j++;
+            }
+            if (j == sitesList.size())
+            {
+                isRunning.set(false);
+                mainPages.clear();
+                globalLinksStorage.clear();
+            }
         }
+
     }
 
     private Document getHTMLContent (String url) {
@@ -92,6 +152,14 @@ public class PageIndexing extends RecursiveAction {
         catch (IOException | NullPointerException ex) {
 
             ex.printStackTrace();
+            if (isRootTask) {
+
+                SiteEntity site = siteRepository.findByMainPageURL(url).get();
+                site.setStatus(Status.FAILED);
+                site.setLastError("Не удалось проиндексировать сайт: " + ex);
+                siteRepository.save(site);
+
+            }
         }
 
         return doc;
@@ -101,7 +169,7 @@ public class PageIndexing extends RecursiveAction {
 
         HashSet<String> links = new HashSet<>();
 
-        String regexURL = siteRepository.findById(1).get().getMainPageURL();
+        String regexURL = mainPages.get(this.id);
         String regexURLEndsWithSlash = regexURL + "[\\/]*";
         String regexURLEndsWithAnySymbol = regexURL + "/\\S*";
 
@@ -112,13 +180,15 @@ public class PageIndexing extends RecursiveAction {
             String buff = regexURL.concat(e.attr("href"));
 
             if (e.attr("href").contains(regexURL) && !(e.attr("href").matches(regexURLEndsWithSlash))
-                    && !e.attr("href").contains("#")) {
-
-                /*if (allLinks.add(e.attr("href")))*/ links.add(e.attr("href"));
+                    && !e.attr("href").contains("#"))
+            {
+                if (globalLinksStorage.add(e.attr("href"))) links.add(e.attr("href"));
             }
 
-            else if (buff.matches(regexURLEndsWithAnySymbol) && !(buff.matches(regexURLEndsWithSlash)) && !(e.attr("href").contains("#"))) {
-                /*if (allLinks.add(buff))*/ links.add(buff);
+            else if (buff.matches(regexURLEndsWithAnySymbol) && !(buff.matches(regexURLEndsWithSlash))
+                    && !(e.attr("href").contains("#")))
+            {
+                if (globalLinksStorage.add(buff)) links.add(buff);
             }
         }
 
@@ -131,14 +201,83 @@ public class PageIndexing extends RecursiveAction {
 
             if (!links.isEmpty()) {
                 links
-                        .forEach(link ->
-                        {
-                            if (!pageRepository.findByPagePath(link).isPresent())
-                                subTasks.add(new PageIndexing(link, pageRepository, siteRepository, false));
-                        });
+                .forEach(link ->
+                    subTasks
+                    .add(new PageIndexing(this.id, link, pageRepository, siteRepository, lemmaRepository, indexRepository, false)));
             }
 
         return subTasks;
     }
 
+    private void saveLemmasToTable (Document htmlCode, String pagePath) throws SQLException {
+
+        HashMap<String, Integer> lemmasMap = new HashMap<>();
+        LemmaFinder lemmaFinder = new LemmaFinder();
+        PageEntity pageEntity = pageRepository.findByPagePath(pagePath).get();
+        SiteEntity siteEntity = siteRepository.findById(this.id).get();
+        int lemmaFromTableResultSet = 0;
+
+        try
+        {
+            lemmasMap = lemmaFinder.findLemmas(htmlCode.html());
+        }
+        catch (IOException ex)
+        {
+            System.out.println(ex.getMessage());
+        }
+
+        for (String lemma : lemmasMap.keySet())
+        {
+            LemmaEntity lemmaEntity = new LemmaEntity();
+            List <LemmaEntity> lemmasFromTableList = new ArrayList<>();
+
+            synchronized (lemmaRepository)
+            {
+
+                lemmasFromTableList = lemmaRepository.findAllByLemma(lemma);
+                if (!lemmasFromTableList.isEmpty())
+                {
+                    for (LemmaEntity lemmaEntityTransitional : lemmasFromTableList)
+                    {
+                        if (lemmaEntityTransitional.getSiteId().getId() == this.id)
+                        {
+                            lemmaEntityTransitional.setFrequency(lemmaEntityTransitional.getFrequency() + 1);
+                            lemmaRepository.saveAndFlush(lemmaEntityTransitional);
+                            saveIndexEntityToTable(lemmaEntityTransitional, pageEntity, lemmasMap.get(lemma));
+                        }
+                    }
+                }
+                else
+                {
+                    lemmaEntity.setLemma(lemma);
+                    lemmaEntity.setFrequency(1);
+                    try {
+                        lemmaEntity.setSiteId(siteEntity);
+                    } catch (PersistentObjectException | InvalidDataAccessApiUsageException ex) {
+                        System.out.println(ex.getMessage());
+                    }
+
+                    lemmaRepository.saveAndFlush(lemmaEntity);
+                    saveIndexEntityToTable(lemmaEntity, pageEntity, lemmasMap.get(lemma));
+                }
+            }
+        }
+    }
+
+
+    private void saveIndexEntityToTable(LemmaEntity lemmaEntity, PageEntity pageEntity, int rank)
+    {
+
+        IndexEntity indexEntity = new IndexEntity();
+
+        try {
+            indexEntity.setLemmaEntity(lemmaEntity);
+            indexEntity.setPageEntity(pageEntity);
+            indexEntity.setRank(rank);
+
+            indexRepository.saveAndFlush(indexEntity);
+        } catch (PersistentObjectException | InvalidDataAccessApiUsageException ex) {
+            System.out.println(ex.getMessage());
+        }
+    }
 }

@@ -5,9 +5,7 @@ import searchengine.dto.indexing.IndexingResponse;
 public interface IndexingService {
 
     IndexingResponse startIndexing();
-
-    void addRowsToSiteTable();
-
-    void deleteRowsFromTableSiteONStartup();
+    IndexingResponse stopIndexing();
+    IndexingResponse lonePageIndexing(String url);
 
 }

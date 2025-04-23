@@ -27,10 +27,12 @@ spring:
 
 indexing-settings:
   sites:
-#    - url: https://splitstone.ru
-#      name: Сплитстон
+    - url: https://splitstone.ru
+      name: Сплитстон
     - url: https://candymapperr2.com
       name: Кэндимаппер
+    - url: https://spfrtyrtyrt.ru/
+      name: Фальшивка
 #    - url: https://www.lenta.ru
 #      name: Лента.ру
 #    - url: https://www.skillbox.ru
