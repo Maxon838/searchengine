@@ -11,7 +11,7 @@ import java.util.List;
 @Entity
 @Getter
 @Setter
-@Table (name = "page")//, indexes = @IndexEntity(columnList = "path"))
+@Table (name = "page")
 public class PageEntity {
 
     @Id

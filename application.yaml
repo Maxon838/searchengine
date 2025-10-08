@@ -33,6 +33,10 @@ indexing-settings:
       name: Кэндимаппер
     - url: https://spfrtyrtyrt.ru/
       name: Фальшивка
+    - url: https://chelebident.ru/
+      name: Chelebident
+    - url: https://citystories.pro/
+      name: Городские истории
 #    - url: https://www.lenta.ru
 #      name: Лента.ру
 #    - url: https://www.skillbox.ru

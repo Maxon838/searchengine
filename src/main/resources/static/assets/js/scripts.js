@@ -1346,6 +1346,7 @@ var form = function(){
                 }
             });
             $form.on('submit', function(e){
+                console.log('Submit caught by form handler');
                 var $this = $(this),
                     $validate = $this.find('[data-validate]');
                 
@@ -1443,11 +1444,18 @@ table().init();
 
 var API = function(){
     function sendData(address, type, data, cb, $this) {
+        var isGet = type.toLowerCase() === 'get'; //Правка
         $.ajax({
-            url: backendApiUrl + address,
+//            url: backendApiUrl + address,
+//            type: type,
+//            contentType: 'application/json', // Указываем тип данных
+//            dataType: 'json',
+//            data: JSON.stringify(data),     // Преобразуем объект JS в JSON, <data: data> - так было
+            url: backendApiUrl + address,     //<-************ Правка
             type: type,
+            contentType: isGet ? null : 'application/json',
             dataType: 'json',
-            data: data,
+            data: isGet ? data : JSON.stringify(data), //************ Правка ->
             complete: function(result) {
                 if (result.status >= 200 && result.status <= 500) {
                     cb(result.responseJSON, $this, data);
@@ -1732,6 +1740,7 @@ var API = function(){
             )
             var $send = $('[data-send]');
             $send.on('submit click', function(e){
+                console.log('Submit/click caught by send handler');
                 var $this = $(this);
                 var data = '';
                 if (($this.hasClass('form') && e.type==='submit')

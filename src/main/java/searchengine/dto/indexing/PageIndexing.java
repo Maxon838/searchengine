@@ -15,9 +15,6 @@ import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -36,11 +33,9 @@ public class PageIndexing extends RecursiveAction {
     private final IndexRepository indexRepository;
     private final boolean isRootTask;
     private int responseCode = 0;
-
     private static Set<String> globalLinksStorage = ConcurrentHashMap.newKeySet();
     private static ConcurrentHashMap<Integer, String> mainPages = new ConcurrentHashMap<>();
     private static final Set<Integer> responseErrorsCodesSet = new HashSet<>(Arrays.asList(0,400,401,403,404,405,406,407,408,409,410,411,412,413,500,501,502,503,504,505,507,508,509));
-
     public PageIndexing (int id, String url, PageRepository pageRepository, SiteRepository siteRepository, LemmaRepository lemmaRepository, IndexRepository indexRepository, boolean isRootTask)
     {
         this.id = id;
@@ -127,13 +122,12 @@ public class PageIndexing extends RecursiveAction {
                 globalLinksStorage.clear();
             }
         }
-
     }
 
     private Document getHTMLContent (String url) {
 
         try {
-            Thread.sleep(200);
+            Thread.sleep(100);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
@@ -175,20 +169,21 @@ public class PageIndexing extends RecursiveAction {
 
         Elements elements = doc.select("a[href]");
 
-        for (Element e : elements) {
-
+        for (Element e : elements)
+        {
             String buff = regexURL.concat(e.attr("href"));
 
-            if (e.attr("href").contains(regexURL) && !(e.attr("href").matches(regexURLEndsWithSlash))
-                    && !e.attr("href").contains("#"))
+            if (LinkFilter(e.attr("href")))
             {
-                if (globalLinksStorage.add(e.attr("href"))) links.add(e.attr("href"));
-            }
-
-            else if (buff.matches(regexURLEndsWithAnySymbol) && !(buff.matches(regexURLEndsWithSlash))
-                    && !(e.attr("href").contains("#")))
-            {
-                if (globalLinksStorage.add(buff)) links.add(buff);
+                if (e.attr("href").contains(regexURL) && !(e.attr("href").matches(regexURLEndsWithSlash))
+                        && !e.attr("href").contains("#"))
+                {
+                    if (globalLinksStorage.add(e.attr("href"))) links.add(e.attr("href"));
+                } else if (buff.matches(regexURLEndsWithAnySymbol) && !(buff.matches(regexURLEndsWithSlash))
+                        && !(e.attr("href").contains("#")))
+                {
+                    if (globalLinksStorage.add(buff)) links.add(buff);
+                }
             }
         }
 
@@ -215,11 +210,10 @@ public class PageIndexing extends RecursiveAction {
         LemmaFinder lemmaFinder = new LemmaFinder();
         PageEntity pageEntity = pageRepository.findByPagePath(pagePath).get();
         SiteEntity siteEntity = siteRepository.findById(this.id).get();
-        int lemmaFromTableResultSet = 0;
 
         try
         {
-            lemmasMap = lemmaFinder.findLemmas(htmlCode.html());
+            lemmasMap = lemmaFinder.getLemmas(htmlCode.body().text());
         }
         catch (IOException ex)
         {
@@ -229,22 +223,36 @@ public class PageIndexing extends RecursiveAction {
         for (String lemma : lemmasMap.keySet())
         {
             LemmaEntity lemmaEntity = new LemmaEntity();
-            List <LemmaEntity> lemmasFromTableList = new ArrayList<>();
+            List <LemmaEntity> lemmasFromTableList;
 
             synchronized (lemmaRepository)
             {
-
                 lemmasFromTableList = lemmaRepository.findAllByLemma(lemma);
                 if (!lemmasFromTableList.isEmpty())
                 {
-                    for (LemmaEntity lemmaEntityTransitional : lemmasFromTableList)
+                    List<LemmaEntity> lemmaFromTableWithThisSiteId= lemmasFromTableList.stream()
+                    .filter(o -> o.getSiteId().getId() == this.id).toList();
+
+                    if (!lemmaFromTableWithThisSiteId.isEmpty())
                     {
-                        if (lemmaEntityTransitional.getSiteId().getId() == this.id)
-                        {
-                            lemmaEntityTransitional.setFrequency(lemmaEntityTransitional.getFrequency() + 1);
-                            lemmaRepository.saveAndFlush(lemmaEntityTransitional);
-                            saveIndexEntityToTable(lemmaEntityTransitional, pageEntity, lemmasMap.get(lemma));
+                        LemmaEntity lemmaEntityTransitional = lemmaFromTableWithThisSiteId.get(0);
+                        int frequency = lemmaEntityTransitional.getFrequency() + 1;
+                        lemmaEntityTransitional.setFrequency(frequency);
+                        lemmaRepository.saveAndFlush(lemmaEntityTransitional);
+                        saveIndexEntityToTable(lemmaEntityTransitional, pageEntity, lemmasMap.get(lemma));
+                    }
+                    else
+                    {
+                        lemmaEntity.setLemma(lemma);
+                        lemmaEntity.setFrequency(1);
+                        try {
+                            lemmaEntity.setSiteId(siteEntity);
+                        } catch (PersistentObjectException | InvalidDataAccessApiUsageException ex) {
+                            System.out.println(ex.getMessage());
                         }
+
+                        lemmaRepository.saveAndFlush(lemmaEntity);
+                        saveIndexEntityToTable(lemmaEntity, pageEntity, lemmasMap.get(lemma));
                     }
                 }
                 else
@@ -264,7 +272,6 @@ public class PageIndexing extends RecursiveAction {
         }
     }
 
-
     private void saveIndexEntityToTable(LemmaEntity lemmaEntity, PageEntity pageEntity, int rank)
     {
 
@@ -279,5 +286,17 @@ public class PageIndexing extends RecursiveAction {
         } catch (PersistentObjectException | InvalidDataAccessApiUsageException ex) {
             System.out.println(ex.getMessage());
         }
+    }
+
+    private boolean LinkFilter(String link)
+    {
+        Set<String> unwantedLinksSet = new HashSet<>(Arrays.asList(".*[.]pdf.*", ".*[.]jpeg.*", ".*[.]jpg.*", ".*[.]tiff.*", ".*[.]png.*"));
+
+        for (String s : unwantedLinksSet)
+        {
+            if (link.matches(s)) return false;
+        }
+
+        return true;
     }
 }

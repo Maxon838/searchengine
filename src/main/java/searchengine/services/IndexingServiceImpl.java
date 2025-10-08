@@ -53,7 +53,9 @@ public class IndexingServiceImpl implements IndexingService{
 
         for (Site site : sites.getSites())
         {
-            pool.execute(new PageIndexing(siteRepository.findByMainPageURL(site.getUrl()).get().getId(), site.getUrl(), pageRepository, siteRepository, lemmaRepository, indexRepository, true));
+            pool.execute(
+            new PageIndexing(
+            siteRepository.findByMainPageURL(site.getUrl()).get().getId(), site.getUrl(), pageRepository, siteRepository, lemmaRepository, indexRepository, true));
         }
         isRunning.set(true);
 
@@ -77,17 +79,17 @@ public class IndexingServiceImpl implements IndexingService{
 
         for (Site site : sites.getSites())
         {
-            if (pageURL.contains(site.getUrl().replaceAll("https://", ""))) // если страница принадлежит одному из сайтов
+            if (pageURL.contains(site.getUrl().replaceAll("https://", "")))
             {
                 new Thread (()->
                 {
                     String pagePath = pageURL.replaceAll("www.", "").replaceAll(site.getUrl(), "");
 
-                    if (siteRepository.findByMainPageURL(site.getUrl()).isPresent()) // если сайт, которому принадлежит страница находится в таблице Site
+                    if (siteRepository.findByMainPageURL(site.getUrl()).isPresent())
                     {
                         int siteId = siteRepository.findByMainPageURL(site.getUrl()).get().getId();
 
-                        if (pageRepository.findByPagePath(pagePath).isPresent()) // если страница есть в таблице Page
+                        if (pageRepository.findByPagePath(pagePath).isPresent())
                         {
                             List<IndexEntity> deletedIndexTableRows = indexRepository.findAllByPageEntity(pageRepository.findByPagePath(pagePath).get());
 
@@ -97,7 +99,7 @@ public class IndexingServiceImpl implements IndexingService{
                                 System.out.println(ex.getMessage());
                             }
 
-                            deleteLemmas(deletedIndexTableRows); // удаляем леммы по данным из таблицы Index
+                            deleteLemmas(deletedIndexTableRows);
                         }
 
                         HashMap<Integer, String> htmlAndResponseCode = parseSinglePage(pageURL);
@@ -106,7 +108,7 @@ public class IndexingServiceImpl implements IndexingService{
 
                         saveLemmasAndIndexesToTables(siteId, htmlAndResponseCode.get(responseCode), pagePath);
                     }
-                    else //если сайт ещё не внесён в таблицу Site
+                    else
                     {
                         addSiteEntity(site);
 
@@ -194,7 +196,7 @@ public class IndexingServiceImpl implements IndexingService{
         return htmlAndResponseCode;
     }
 
-    private void deleteLemmas (List<IndexEntity> deletedIndexTableRows)  //удаляем леммы по данным из таблицы Index
+    private void deleteLemmas (List<IndexEntity> deletedIndexTableRows)
     {
         for (IndexEntity index : deletedIndexTableRows)
         {
@@ -218,7 +220,7 @@ public class IndexingServiceImpl implements IndexingService{
 
         try
         {
-            lemmasMap = lemmaFinder.findLemmas(htmlCode);
+            lemmasMap = lemmaFinder.getLemmas(htmlCode);
         }
         catch (IOException ex)
         {
