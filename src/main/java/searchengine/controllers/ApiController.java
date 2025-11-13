@@ -1,12 +1,10 @@
 package searchengine.controllers;
 
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import searchengine.dto.indexing.IndexingResponse;
 import searchengine.dto.searching.SearchingResponse;
 import searchengine.dto.statistics.StatisticsResponse;
-import searchengine.exceptions.SiteNotFoundException;
-import searchengine.exceptions.IndexNotReadyException;
 import searchengine.services.IndexingService;
 import searchengine.services.SearchingService;
 import searchengine.services.StatisticsService;
@@ -14,6 +12,7 @@ import searchengine.services.StatisticsService;
 import java.util.Map;
 
 @RestController
+@RequiredArgsConstructor
 @RequestMapping("/api")
 public class ApiController {
 
@@ -21,74 +20,27 @@ public class ApiController {
     private final IndexingService indexingService;
     private final SearchingService searchingService;
 
-    public ApiController(StatisticsService statisticsService, IndexingService indexingService, SearchingService searchingService) {
-        this.statisticsService = statisticsService;
-        this.indexingService  = indexingService;
-        this.searchingService = searchingService;
-    }
-
     @GetMapping("/statistics")
-    public ResponseEntity<StatisticsResponse> statistics()
-    {
-        return ResponseEntity.ok(statisticsService.getStatistics());
-    }
-
+    public StatisticsResponse statistics() {return statisticsService.getStatistics();}
     @GetMapping("/startIndexing")
-    public ResponseEntity<?> startIndexing ()
+    public IndexingResponse startIndexing ()
     {
-        return new ResponseEntity<>(indexingService.startIndexing(), HttpStatus.OK);
+        return indexingService.startIndexing();
     }
-
     @GetMapping("/stopIndexing")
-    public ResponseEntity<?> stopIndexing ()
+    public IndexingResponse stopIndexing ()
     {
-        return new ResponseEntity<>(indexingService.stopIndexing(), HttpStatus.OK);
+        return indexingService.stopIndexing();
     }
-
     @PostMapping("/indexPage")
-    public ResponseEntity<?> indexPage (@RequestBody Map<String, String> request)
-    {
+    public IndexingResponse indexPage (@RequestBody Map<String, String> request) {
         String url = request.get("url");
-        System.out.println(url);
-        return new ResponseEntity<>(indexingService.lonePageIndexing(url), HttpStatus.OK);
+        return indexingService.lonePageIndexing(url);
     }
-
     @GetMapping("/search")
-    public ResponseEntity<SearchingResponse> search (@RequestParam String query, @RequestParam(defaultValue = "") String site)
+    public SearchingResponse search (@RequestParam String query, @RequestParam(defaultValue = "") String site)
     {
         System.out.println("Query = " + query + " Site = " + site);
-
-        if (query == null || query.trim().isEmpty()) {
-            SearchingResponse searchingResponse = new SearchingResponse();
-            searchingResponse.setResult(false);
-            searchingResponse.setError("Поисковый запрос не может быть пустым");
-
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(searchingResponse);
-        }
-
-        try {
-            SearchingResponse result = searchingService.search(query, site);
-
-            return ResponseEntity.ok(result);
-
-        } catch (SiteNotFoundException e) {
-            SearchingResponse response = new SearchingResponse();
-            response.setResult(false);
-            response.setError("Запрашиваемый сайт не найден");
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
-
-        } catch (IndexNotReadyException e) {
-            SearchingResponse response = new SearchingResponse();
-            response.setResult(false);
-            response.setError("Индексация ещё не завершена");
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
-
-        } catch (Exception e) {
-            SearchingResponse response = new SearchingResponse();
-            response.setResult(false);
-            response.setError("Произошла внутренняя ошибка сервера");
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
-        }
-
+        return searchingService.search(query, site);
     }
 }

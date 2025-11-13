@@ -9,7 +9,7 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class Response {
+public class ResponseInfoFields {
     private String site;
     private String siteName;
     private String uri;

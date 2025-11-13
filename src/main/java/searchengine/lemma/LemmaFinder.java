@@ -41,7 +41,7 @@ public class LemmaFinder {
             {
                 if (normalForm.equals("да")&&(word.equals("д"))) normalForm = "д";
                 resultMap.merge(normalForm, 1, Integer::sum);
-            }                                                     
+            }
         }
 
          return resultMap;

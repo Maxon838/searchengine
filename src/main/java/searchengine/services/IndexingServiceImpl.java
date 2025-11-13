@@ -13,6 +13,8 @@ import searchengine.config.Site;
 import searchengine.config.SitesList;
 import searchengine.dto.indexing.IndexingResponse;
 import searchengine.dto.indexing.PageIndexing;
+import searchengine.exceptions.IndexingException;
+import searchengine.exceptions.BadIndexingRequestException;
 import searchengine.lemma.LemmaFinder;
 import searchengine.model.*;
 import searchengine.repositories.IndexRepository;
@@ -21,10 +23,9 @@ import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.NoSuchElementException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.*;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -46,7 +47,7 @@ public class IndexingServiceImpl implements IndexingService{
     @Override
     public IndexingResponse startIndexing () throws NoSuchElementException, NullPointerException
     {
-        if (isRunning.get()) return new IndexingResponse(false, "Индексация уже запущена");
+        if (isRunning.get()) throw new IndexingException("Индексация уже запущена");
         stopFlag.set(false);
         deleteRowsFromTablesONStartup();
         addRowsToSiteTable();
@@ -65,7 +66,7 @@ public class IndexingServiceImpl implements IndexingService{
     @Override
     public IndexingResponse stopIndexing()
     {
-        if (!isRunning.get()) return new IndexingResponse(false, "Индексация не запущена");
+        if (!isRunning.get()) throw new IndexingException("Индексация не запущена");
         stopFlag.set(true);
         isRunning.set(false);
 
@@ -75,47 +76,34 @@ public class IndexingServiceImpl implements IndexingService{
     @Override
     public IndexingResponse lonePageIndexing(String pageURL)
     {
-        if (isRunning.get()) return new IndexingResponse(false, "Запущена индексация сайтов");
-
-        for (Site site : sites.getSites())
-        {
-            if (pageURL.contains(site.getUrl().replaceAll("https://", "")))
-            {
-                new Thread (()->
-                {
+        if (isRunning.get()) throw new IndexingException("Запущена индексация сайтов");
+        if (!isValidUrl(pageURL)) throw new BadIndexingRequestException("Неверный формат ссылки");
+        for (Site site : sites.getSites()) {
+            if (pageURL.contains(site.getUrl().replaceAll("https://", ""))) {
+                new Thread (()-> {
                     String pagePath = pageURL.replaceAll("www.", "").replaceAll(site.getUrl(), "");
 
-                    if (siteRepository.findByMainPageURL(site.getUrl()).isPresent())
-                    {
+                    if (siteRepository.findByMainPageURL(site.getUrl()).isPresent()) {
                         int siteId = siteRepository.findByMainPageURL(site.getUrl()).get().getId();
-
-                        if (pageRepository.findByPagePath(pagePath).isPresent())
-                        {
+                        if (pageRepository.findByPagePath(pagePath).isPresent()) {
                             List<IndexEntity> deletedIndexTableRows = indexRepository.findAllByPageEntity(pageRepository.findByPagePath(pagePath).get());
-
                             try {
                                 pageRepository.delete(pageRepository.findByPagePath(pagePath).get());
                             } catch (NoSuchElementException ex) {
                                 System.out.println(ex.getMessage());
                             }
-
                             deleteLemmas(deletedIndexTableRows);
                         }
-
                         HashMap<Integer, String> htmlAndResponseCode = parseSinglePage(pageURL);
                         addPageEntity(pagePath, htmlAndResponseCode, siteId);
                         Integer responseCode = htmlAndResponseCode.keySet().stream().findFirst().get();
-
                         saveLemmasAndIndexesToTables(siteId, htmlAndResponseCode.get(responseCode), pagePath);
                     }
-                    else
-                    {
+                    else {
                         addSiteEntity(site);
-
                         HashMap<Integer, String> htmlAndResponseCode = parseSinglePage(pageURL);
                         addPageEntity(pagePath, htmlAndResponseCode, siteRepository.findByMainPageURL(site.getUrl()).get().getId());
                         Integer responseCode = htmlAndResponseCode.keySet().stream().findFirst().get();
-
                         saveLemmasAndIndexesToTables(siteRepository.findByMainPageURL(site.getUrl()).get().getId(), htmlAndResponseCode.get(responseCode), pagePath);
                     }
                 }).start();
@@ -124,7 +112,16 @@ public class IndexingServiceImpl implements IndexingService{
             }
         }
 
-        return new IndexingResponse(false, "Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
+        throw new BadIndexingRequestException("Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
+    }
+
+    private boolean isValidUrl (String url) {
+        try {
+            new URL(url);
+            return true;
+        } catch (MalformedURLException e) {
+            return false;
+        }
     }
 
     private void deleteRowsFromTablesONStartup()
@@ -204,8 +201,7 @@ public class IndexingServiceImpl implements IndexingService{
             LemmaEntity editingLemmaEntity = lemmaRepository.findById(lemmaEntity.getId()).get();
 
             int lemmaFrequency = editingLemmaEntity.getFrequency();
-            if (lemmaFrequency > 1)
-            {
+            if (lemmaFrequency > 1) {
                 editingLemmaEntity.setFrequency(lemmaFrequency - 1);
                 lemmaRepository.save(editingLemmaEntity);
             }
@@ -218,35 +214,28 @@ public class IndexingServiceImpl implements IndexingService{
         LemmaFinder lemmaFinder = new LemmaFinder();
         PageEntity pageEntity = pageRepository.findByPagePath(pagePath).get();
 
-        try
-        {
+        try {
             lemmasMap = lemmaFinder.getLemmas(htmlCode);
         }
-        catch (IOException ex)
-        {
+        catch (IOException ex) {
             System.out.println(ex.getMessage());
         }
 
-        for (String lemma : lemmasMap.keySet())
-        {
+        for (String lemma : lemmasMap.keySet()) {
             LemmaEntity lemmaEntity = new LemmaEntity();
             List <LemmaEntity> lemmasFromTableList = new ArrayList<>();
             lemmasFromTableList = lemmaRepository.findAllByLemma(lemma);
 
-            if (!lemmasFromTableList.isEmpty())
-            {
-                for (LemmaEntity lemmaEntityTransitional : lemmasFromTableList)
-                {
-                    if (lemmaEntityTransitional.getSiteId().getId() == siteId)
-                    {
+            if (!lemmasFromTableList.isEmpty()) {
+                for (LemmaEntity lemmaEntityTransitional : lemmasFromTableList) {
+                    if (lemmaEntityTransitional.getSiteId().getId() == siteId) {
                         lemmaEntityTransitional.setFrequency(lemmaEntityTransitional.getFrequency() + 1);
                         lemmaRepository.saveAndFlush(lemmaEntityTransitional);
                         saveRowsToIndexTable(lemmaEntityTransitional, pageEntity, lemmasMap.get(lemma));
                     }
                 }
             }
-            else
-            {
+            else {
                 lemmaEntity.setLemma(lemma);
                 lemmaEntity.setFrequency(1);
                 try {
@@ -254,7 +243,6 @@ public class IndexingServiceImpl implements IndexingService{
                 } catch (PersistentObjectException | InvalidDataAccessApiUsageException ex) {
                     System.out.println(ex.getMessage());
                 }
-
                 lemmaRepository.saveAndFlush(lemmaEntity);
                 saveRowsToIndexTable(lemmaEntity, pageEntity, lemmasMap.get(lemma));
             }

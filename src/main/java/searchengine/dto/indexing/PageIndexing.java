@@ -49,32 +49,24 @@ public class PageIndexing extends RecursiveAction {
 
     @Override
     protected void compute() {
-
-        if (stopFlag.get())
-        {
-            for (SiteEntity site : siteRepository.findAll())
-            {
-                if (site.getStatus().equals(Status.INDEXING))
-                {
+        if (stopFlag.get()) {
+            for (SiteEntity site : siteRepository.findAll()) {
+                if (site.getStatus().equals(Status.INDEXING)) {
                     site.setStatus(Status.FAILED);
                     site.setLastError("Индексация прервана пользователем");
                     siteRepository.save(site);
                 }
             }
-
             Thread.currentThread().interrupt();
             mainPages.clear();
             globalLinksStorage.clear();
             isRunning.set(false);
         }
 
-        if (isRootTask)
-        {
+        if (isRootTask) {
             mainPages.put(siteRepository.findByMainPageURL(this.url).get().getId(), this.url);
         }
-
         Document htmlContent = getHTMLContent(url);
-
         PageEntity page = new PageEntity();
         if (!isRootTask) {
             page.setPagePath(url.replace(mainPages.get(this.id), ""));
@@ -91,19 +83,14 @@ public class PageIndexing extends RecursiveAction {
                 }
             }
         }
-
         List <PageIndexing> subTasksList = createSubtasks(getLinksFromPage(htmlContent));
-
         for (PageIndexing task : subTasksList) {
             task.fork();
         }
-
         for (PageIndexing task : subTasksList) {
             task.join();
         }
-
         if (isRootTask) {
-
             SiteEntity site = siteRepository.findByMainPageURL(url).get();
             if (site.getStatus().equals(Status.FAILED)) return;
             site.setStatus(Status.INDEXED);
@@ -111,12 +98,10 @@ public class PageIndexing extends RecursiveAction {
 
             List <SiteEntity> sitesList = siteRepository.findAll();
             int j = 0;
-            for (SiteEntity siteEntity : sitesList)
-            {
+            for (SiteEntity siteEntity : sitesList) {
                 if (!siteEntity.getStatus().equals(Status.INDEXING)) j++;
             }
-            if (j == sitesList.size())
-            {
+            if (j == sitesList.size()) {
                 isRunning.set(false);
                 mainPages.clear();
                 globalLinksStorage.clear();
@@ -125,7 +110,6 @@ public class PageIndexing extends RecursiveAction {
     }
 
     private Document getHTMLContent (String url) {
-
         try {
             Thread.sleep(100);
         } catch (InterruptedException e) {
@@ -138,21 +122,17 @@ public class PageIndexing extends RecursiveAction {
             doc = Jsoup.connect(url).get();
             responseCode = doc.connection().response().statusCode();
         }
-        catch (HttpStatusException e)
-        {
+        catch (HttpStatusException e) {
             System.out.println(e.getMessage());
             responseCode = e.getStatusCode();
         }
         catch (IOException | NullPointerException ex) {
-
             ex.printStackTrace();
             if (isRootTask) {
-
                 SiteEntity site = siteRepository.findByMainPageURL(url).get();
                 site.setStatus(Status.FAILED);
                 site.setLastError("Не удалось проиндексировать сайт: " + ex);
                 siteRepository.save(site);
-
             }
         }
 
@@ -160,28 +140,20 @@ public class PageIndexing extends RecursiveAction {
     }
 
     private HashSet<String> getLinksFromPage(Document doc) {
-
         HashSet<String> links = new HashSet<>();
-
         String regexURL = mainPages.get(this.id);
         String regexURLEndsWithSlash = regexURL + "[\\/]*";
         String regexURLEndsWithAnySymbol = regexURL + "/\\S*";
-
         Elements elements = doc.select("a[href]");
 
-        for (Element e : elements)
-        {
+        for (Element e : elements) {
             String buff = regexURL.concat(e.attr("href"));
-
-            if (LinkFilter(e.attr("href")))
-            {
+            if (LinkFilter(e.attr("href"))) {
                 if (e.attr("href").contains(regexURL) && !(e.attr("href").matches(regexURLEndsWithSlash))
-                        && !e.attr("href").contains("#"))
-                {
+                        && !e.attr("href").contains("#")) {
                     if (globalLinksStorage.add(e.attr("href"))) links.add(e.attr("href"));
                 } else if (buff.matches(regexURLEndsWithAnySymbol) && !(buff.matches(regexURLEndsWithSlash))
-                        && !(e.attr("href").contains("#")))
-                {
+                        && !(e.attr("href").contains("#"))) {
                     if (globalLinksStorage.add(buff)) links.add(buff);
                 }
             }
@@ -191,58 +163,46 @@ public class PageIndexing extends RecursiveAction {
     }
 
     private List<PageIndexing> createSubtasks (HashSet<String> links) {
-
         List<PageIndexing> subTasks = new ArrayList<>();
-
             if (!links.isEmpty()) {
                 links
                 .forEach(link ->
                     subTasks
                     .add(new PageIndexing(this.id, link, pageRepository, siteRepository, lemmaRepository, indexRepository, false)));
             }
-
         return subTasks;
     }
 
     private void saveLemmasToTable (Document htmlCode, String pagePath) throws SQLException {
-
         HashMap<String, Integer> lemmasMap = new HashMap<>();
         LemmaFinder lemmaFinder = new LemmaFinder();
         PageEntity pageEntity = pageRepository.findByPagePath(pagePath).get();
         SiteEntity siteEntity = siteRepository.findById(this.id).get();
 
-        try
-        {
+        try {
             lemmasMap = lemmaFinder.getLemmas(htmlCode.body().text());
         }
-        catch (IOException ex)
-        {
+        catch (IOException ex) {
             System.out.println(ex.getMessage());
         }
 
-        for (String lemma : lemmasMap.keySet())
-        {
+        for (String lemma : lemmasMap.keySet()) {
             LemmaEntity lemmaEntity = new LemmaEntity();
             List <LemmaEntity> lemmasFromTableList;
 
-            synchronized (lemmaRepository)
-            {
+            synchronized (lemmaRepository) {
                 lemmasFromTableList = lemmaRepository.findAllByLemma(lemma);
-                if (!lemmasFromTableList.isEmpty())
-                {
+                if (!lemmasFromTableList.isEmpty()) {
                     List<LemmaEntity> lemmaFromTableWithThisSiteId= lemmasFromTableList.stream()
                     .filter(o -> o.getSiteId().getId() == this.id).toList();
-
-                    if (!lemmaFromTableWithThisSiteId.isEmpty())
-                    {
+                    if (!lemmaFromTableWithThisSiteId.isEmpty()) {
                         LemmaEntity lemmaEntityTransitional = lemmaFromTableWithThisSiteId.get(0);
                         int frequency = lemmaEntityTransitional.getFrequency() + 1;
                         lemmaEntityTransitional.setFrequency(frequency);
                         lemmaRepository.saveAndFlush(lemmaEntityTransitional);
                         saveIndexEntityToTable(lemmaEntityTransitional, pageEntity, lemmasMap.get(lemma));
                     }
-                    else
-                    {
+                    else {
                         lemmaEntity.setLemma(lemma);
                         lemmaEntity.setFrequency(1);
                         try {
@@ -250,13 +210,11 @@ public class PageIndexing extends RecursiveAction {
                         } catch (PersistentObjectException | InvalidDataAccessApiUsageException ex) {
                             System.out.println(ex.getMessage());
                         }
-
                         lemmaRepository.saveAndFlush(lemmaEntity);
                         saveIndexEntityToTable(lemmaEntity, pageEntity, lemmasMap.get(lemma));
                     }
                 }
-                else
-                {
+                else {
                     lemmaEntity.setLemma(lemma);
                     lemmaEntity.setFrequency(1);
                     try {
@@ -264,7 +222,6 @@ public class PageIndexing extends RecursiveAction {
                     } catch (PersistentObjectException | InvalidDataAccessApiUsageException ex) {
                         System.out.println(ex.getMessage());
                     }
-
                     lemmaRepository.saveAndFlush(lemmaEntity);
                     saveIndexEntityToTable(lemmaEntity, pageEntity, lemmasMap.get(lemma));
                 }
@@ -272,9 +229,7 @@ public class PageIndexing extends RecursiveAction {
         }
     }
 
-    private void saveIndexEntityToTable(LemmaEntity lemmaEntity, PageEntity pageEntity, int rank)
-    {
-
+    private void saveIndexEntityToTable(LemmaEntity lemmaEntity, PageEntity pageEntity, int rank) {
         IndexEntity indexEntity = new IndexEntity();
 
         try {
@@ -288,12 +243,9 @@ public class PageIndexing extends RecursiveAction {
         }
     }
 
-    private boolean LinkFilter(String link)
-    {
+    private boolean LinkFilter(String link) {
         Set<String> unwantedLinksSet = new HashSet<>(Arrays.asList(".*[.]pdf.*", ".*[.]jpeg.*", ".*[.]jpg.*", ".*[.]tiff.*", ".*[.]png.*"));
-
-        for (String s : unwantedLinksSet)
-        {
+        for (String s : unwantedLinksSet) {
             if (link.matches(s)) return false;
         }
 

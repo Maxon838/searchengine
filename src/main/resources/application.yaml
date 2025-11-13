@@ -1,27 +1,35 @@
 server:
   port: 8080
+  tomcat:
+    access-log:
+      enabled: true
 spring:
   datasource:
     username: engine_user
     password: access
     url: jdbc:mysql://localhost:3306/search_engine?useSSL=false&requireSSL=false&allowPublicKeyRetrieval=true
-  jpa:
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.MySQL8Dialect
-    hibernate:
-      ddl-auto: create-drop
-    show-sql: false
 #  jpa:
 #    properties:
 #      hibernate:
 #        dialect: org.hibernate.dialect.MySQL8Dialect
-#    show-sql: true
-#    hibernate.ddl-auto: none
-#  liquibase:
-#    change-log: classpath:db/changelog/db.changelog-master.xml
-#    enabled: true
-#    drop-first: false
+#    hibernate:
+#      ddl-auto: create-drop
+#    show-sql: false
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+    show-sql: false
+    hibernate.ddl-auto: validate
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+    enabled: true
+    drop-first: true
+
+#logging:
+#  level:
+#    org.apache.coyote: DEBUG
+#    org.apache.tomcat: DEBUG
 
 # example values
 

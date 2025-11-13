@@ -16,8 +16,11 @@ public class SearchingResponse {
     private boolean result;
     private String error;
     private Integer count;
-    private List<Response> data;
-
+    private List<ResponseInfoFields> data;
+public SearchingResponse (boolean result, String error) {
+    this.result = result;
+    this.error = error;
+}
     public SearchingResponse setNoResults () {
         this.setResult(true);
         this.setCount(0);

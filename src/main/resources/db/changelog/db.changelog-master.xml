@@ -43,12 +43,72 @@
                 <constraints nullable="false"/>
             </column>
         </createTable>
+        <addForeignKeyConstraint
+            baseTableName = "page"
+            baseColumnNames = "site_id"
+            referencedTableName = "site"
+            referencedColumnNames = "id"
+            constraintName = "fk_page_site"
+            onDelete="CASCADE"
+        />
+        <createIndex indexName="index_path" tableName="page" unique="false">
+            <column name="path(50)"/>
+        </createIndex>
     </changeSet>
 
-    <changeSet id="CreateIndexOnPageTable" author="Max">
-        <createIndex indexName="index_path" tableName="page" unique="false">
-                <column name="path" type="TEXT"/>
-        </createIndex>
+    <changeSet id="CreateLemmaTable" author="Max">
+        <createTable tableName="lemma">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="site_id" type="INT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="lemma" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="frequency" type="INT">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="lemma"
+                baseColumnNames="site_id"
+                referencedTableName="site"
+                referencedColumnNames="id"
+                constraintName="fk_lemma_site"
+                onDelete="CASCADE"/>
+    </changeSet>
+
+    <changeSet id="CreateIndexTable" author="Max">
+        <createTable tableName="index_table">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="page_id" type="INT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="lemma_id" type="INT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="rank_field" type="FLOAT">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="index_table"
+                baseColumnNames="page_id"
+                referencedTableName="page"
+                referencedColumnNames="id"
+                constraintName="fk_index_page"
+                onDelete="CASCADE"/>
+        <addForeignKeyConstraint
+                baseTableName="index_table"
+                baseColumnNames="lemma_id"
+                referencedTableName="lemma"
+                referencedColumnNames="id"
+                constraintName="fk_index_lemma"
+                onDelete="CASCADE"/>
     </changeSet>
 
 </databaseChangeLog>
