@@ -25,6 +25,9 @@ spring:
     change-log: classpath:db/changelog/db.changelog-master.xml
     enabled: true
     drop-first: true
+logging:
+  level:
+    searchengine: DEBUG
 
 #logging:
 #  level:

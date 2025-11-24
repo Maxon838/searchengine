@@ -78,6 +78,7 @@ public class SearchingServiceImpl implements SearchingService {
             count = count + result;
             LemmasWithFrequencyFromQueryMap.put(lemma, result);
         }
+
         LemmasWithFrequencyFromQueryMap.values().removeIf(value -> value == 0 || value > 20);
         if (LemmasWithFrequencyFromQueryMap.isEmpty()) return searchingResponse.setNoResults();
         List<Map.Entry<String, Integer>> sortedEntriesList = LemmasWithFrequencyFromQueryMap.entrySet()
@@ -180,7 +181,9 @@ public class SearchingServiceImpl implements SearchingService {
     private List<Integer> findPagesByLemmas(List<String> lemmas, int level, List<Integer> pagesIdList) {
 
         List<Integer> bufferPagesList = indexRepository.findPagesWithPagesAndLemmas(lemmas.get(level), pagesIdList);
+
         level = level + 1;
+
         if ((lemmas.size() > level)&&(!bufferPagesList.isEmpty()))
         {
             return findPagesByLemmas(lemmas, level, bufferPagesList);

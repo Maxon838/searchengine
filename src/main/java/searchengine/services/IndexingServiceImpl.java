@@ -7,6 +7,8 @@ import org.hibernate.PersistentObjectException;
 import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.stereotype.Service;
 import searchengine.config.Site;
@@ -22,6 +24,7 @@ import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
+import javax.annotation.PostConstruct;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -43,6 +46,7 @@ public class IndexingServiceImpl implements IndexingService{
     private ForkJoinPool pool = new ForkJoinPool();
     public static final AtomicBoolean stopFlag = new AtomicBoolean(false);
     public static final AtomicBoolean isRunning = new AtomicBoolean(false);
+    private static final Logger log = LoggerFactory.getLogger(IndexingServiceImpl.class);
 
     @Override
     public IndexingResponse startIndexing () throws NoSuchElementException, NullPointerException
@@ -52,8 +56,7 @@ public class IndexingServiceImpl implements IndexingService{
         deleteRowsFromTablesONStartup();
         addRowsToSiteTable();
 
-        for (Site site : sites.getSites())
-        {
+        for (Site site : sites.getSites()) {
             pool.execute(
             new PageIndexing(
             siteRepository.findByMainPageURL(site.getUrl()).get().getId(), site.getUrl(), pageRepository, siteRepository, lemmaRepository, indexRepository, true));
@@ -64,8 +67,7 @@ public class IndexingServiceImpl implements IndexingService{
     }
 
     @Override
-    public IndexingResponse stopIndexing()
-    {
+    public IndexingResponse stopIndexing() {
         if (!isRunning.get()) throw new IndexingException("Индексация не запущена");
         stopFlag.set(true);
         isRunning.set(false);
@@ -74,8 +76,7 @@ public class IndexingServiceImpl implements IndexingService{
     }
 
     @Override
-    public IndexingResponse lonePageIndexing(String pageURL)
-    {
+    public IndexingResponse lonePageIndexing(String pageURL) {
         if (isRunning.get()) throw new IndexingException("Запущена индексация сайтов");
         if (!isValidUrl(pageURL)) throw new BadIndexingRequestException("Неверный формат ссылки");
         for (Site site : sites.getSites()) {
@@ -117,37 +118,39 @@ public class IndexingServiceImpl implements IndexingService{
 
     private boolean isValidUrl (String url) {
         try {
-            new URL(url);
+            URL u = new URL(url);
+            if (u.getHost() == null || u.getHost().isEmpty()) {
+                return false;
+            }
             return true;
         } catch (MalformedURLException e) {
+            log.debug(e.getMessage());
             return false;
         }
     }
 
-    private void deleteRowsFromTablesONStartup()
-    {
-        for (Site site : sites.getSites())
-        {
-            try {
-                siteRepository.deleteById(siteRepository.findByName(site.getName()).get().getId());
-            }
-            catch (Throwable e)
-            {
-                System.err.println("No such Row");
-            }
+    private void deleteRowsFromTablesONStartup() {
+        for (Site site : sites.getSites()) {
+            siteRepository.findByName(site.getName())
+                    .ifPresent(s -> {
+                        siteRepository.deleteById(s.getId());
+                        log.debug("Deleted site: {}", site.getName());
+                    });
         }
     }
 
-    private void addRowsToSiteTable()
-    {
-        for (Site site : sites.getSites())
-        {
+    @PostConstruct
+    public void initSites() {
+        addRowsToSiteTable();
+    }
+
+    private void addRowsToSiteTable() {
+        for (Site site : sites.getSites()) {
             addSiteEntity(site);
         }
     }
 
-    private void addSiteEntity (Site site)
-    {
+    private void addSiteEntity (Site site) {
         SiteEntity siteEntity = new SiteEntity();
         siteEntity.setName(site.getName());
         siteEntity.setMainPageURL(site.getUrl());
@@ -155,8 +158,7 @@ public class IndexingServiceImpl implements IndexingService{
         siteRepository.save(siteEntity);
     }
 
-    private void addPageEntity (String pagePath, HashMap<Integer, String> htmlAndResponseCode, int siteId)
-    {
+    private void addPageEntity (String pagePath, HashMap<Integer, String> htmlAndResponseCode, int siteId) {
         PageEntity page = new PageEntity();
         page.setPagePath(pagePath);
         Integer responseCode = htmlAndResponseCode.keySet().stream().findFirst().get();
@@ -167,8 +169,7 @@ public class IndexingServiceImpl implements IndexingService{
         pageRepository.save(page);
     }
 
-    private HashMap<Integer, String> parseSinglePage (String url)
-    {
+    private HashMap<Integer, String> parseSinglePage (String url) {
         HashMap<Integer, String> htmlAndResponseCode = new HashMap<>();
         Document doc = new Document(url);
         int responseCode = 0;
@@ -178,8 +179,7 @@ public class IndexingServiceImpl implements IndexingService{
             responseCode = doc.connection().response().statusCode();
             htmlAndResponseCode.put(responseCode, doc.html());
         }
-        catch (HttpStatusException e)
-        {
+        catch (HttpStatusException e) {
             System.out.println(e.getMessage());
             responseCode = e.getStatusCode();
             htmlAndResponseCode.put(responseCode, doc.html());
@@ -195,8 +195,7 @@ public class IndexingServiceImpl implements IndexingService{
 
     private void deleteLemmas (List<IndexEntity> deletedIndexTableRows)
     {
-        for (IndexEntity index : deletedIndexTableRows)
-        {
+        for (IndexEntity index : deletedIndexTableRows) {
             LemmaEntity lemmaEntity = index.getLemmaEntity();
             LemmaEntity editingLemmaEntity = lemmaRepository.findById(lemmaEntity.getId()).get();
 
@@ -208,8 +207,7 @@ public class IndexingServiceImpl implements IndexingService{
             else lemmaRepository.delete(editingLemmaEntity);
         }
     }
-    private void saveLemmasAndIndexesToTables (int siteId, String htmlCode, String pagePath)
-    {
+    private void saveLemmasAndIndexesToTables (int siteId, String htmlCode, String pagePath) {
         HashMap<String, Integer> lemmasMap = new HashMap<>();
         LemmaFinder lemmaFinder = new LemmaFinder();
         PageEntity pageEntity = pageRepository.findByPagePath(pagePath).get();
@@ -249,8 +247,7 @@ public class IndexingServiceImpl implements IndexingService{
         }
     }
 
-    private void saveRowsToIndexTable (LemmaEntity lemmaEntity, PageEntity pageEntity, int rank)
-    {
+    private void saveRowsToIndexTable (LemmaEntity lemmaEntity, PageEntity pageEntity, int rank) {
         IndexEntity indexEntity = new IndexEntity();
 
         try {
